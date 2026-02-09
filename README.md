@@ -1,17 +1,12 @@
 # 📄 PDF Extractor Pro
 
-```{=html}
-<p align="center">
-```
+
 ![Python](https://img.shields.io/badge/Python-3.x-blue)
 ![Streamlit](https://img.shields.io/badge/Streamlit-App-red)
 ![Status](https://img.shields.io/badge/Status-Active-success)
 ![License](https://img.shields.io/badge/License-Educational-lightgrey)
 ![AI](https://img.shields.io/badge/AI-Document%20Intelligence-purple)
 
-```{=html}
-</p>
-```
 
 ------------------------------------------------------------------------
 
