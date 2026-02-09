@@ -168,7 +168,7 @@ ranking - Interactive Streamlit-based user interface
 
 ------------------------------------------------------------------------
 
-### 2️⃣ Create Virtual Environment
+### 2️⃣ Create Virtual Environment (Recommended)
 
     python -m venv venv
 
