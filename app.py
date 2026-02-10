@@ -22,6 +22,8 @@ from io import BytesIO
 from src.utils import save_uploaded_file, validate_pdf, setup_output_dir, create_image_zip, cleanup_temp_files
 from src.extractor import process_pdf, translate_content
 from src.persona_intel import run_persona_intelligence
+from src.readability import compute_readability
+from src.redactor import redact_pdf, get_available_patterns
 
 # --- 2. PAGE CONFIGURATION ---
 st.set_page_config(
@@ -276,8 +278,8 @@ if st.session_state.processed:
         full_text_content = ""
 
     # Navigation
-    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs([
-        "Metadata", "Structure", "Reader", "Tables", "Visuals", "Gallery", "Export", "Persona AI"
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10 = st.tabs([
+        "Metadata", "Structure", "Reader", "Tables", "Visuals", "Readability", "Gallery", "Export", "Redact", "Persona AI"
     ])
 
     # 1. Metadata
@@ -388,8 +390,100 @@ if st.session_state.processed:
                 st.pyplot(fig); plt.close(fig)
             except: st.error("Word Cloud generation failed.")
 
-    # 6. Gallery
+    # 6. Readability
     with t6:
+        st.markdown("""
+            <div class="section-header">
+                <div class="header-icon-box"><span class="material-symbols-rounded">menu_book</span></div>
+                <div class="header-text">Readability Analysis</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        if full_text_content:
+            metrics = compute_readability(full_text_content)
+
+            # Score Cards Row 1
+            r1c1, r1c2, r1c3, r1c4 = st.columns(4)
+            with r1c1:
+                with st.container(border=True):
+                    st.caption("WORD COUNT")
+                    st.markdown(f"**{metrics['word_count']:,}**")
+            with r1c2:
+                with st.container(border=True):
+                    st.caption("SENTENCE COUNT")
+                    st.markdown(f"**{metrics['sentence_count']:,}**")
+            with r1c3:
+                with st.container(border=True):
+                    st.caption("AVG SENTENCE LENGTH")
+                    st.markdown(f"**{metrics['avg_sentence_length']} words**")
+            with r1c4:
+                with st.container(border=True):
+                    st.caption("READING TIME")
+                    st.markdown(f"**≈ {metrics['reading_time_minutes']} min**")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Score Cards Row 2 — Readability Indices
+            r2c1, r2c2, r2c3, r2c4 = st.columns(4)
+            with r2c1:
+                with st.container(border=True):
+                    st.caption("FLESCH READING EASE")
+                    score = metrics['flesch_reading_ease']
+                    color = "#4ade80" if score >= 60 else "#facc15" if score >= 30 else "#f87171"
+                    st.markdown(f"<span style='font-size:2rem;font-weight:700;color:{color};'>{score}</span>", unsafe_allow_html=True)
+                    st.caption(metrics['reading_level'])
+            with r2c2:
+                with st.container(border=True):
+                    st.caption("FLESCH-KINCAID GRADE")
+                    st.markdown(f"<span style='font-size:2rem;font-weight:700;color:#818cf8;'>{metrics['flesch_kincaid_grade']}</span>", unsafe_allow_html=True)
+                    st.caption("U.S. school grade level")
+            with r2c3:
+                with st.container(border=True):
+                    st.caption("GUNNING FOG INDEX")
+                    st.markdown(f"<span style='font-size:2rem;font-weight:700;color:#818cf8;'>{metrics['gunning_fog_index']}</span>", unsafe_allow_html=True)
+                    st.caption("Years of education needed")
+            with r2c4:
+                with st.container(border=True):
+                    st.caption("COLEMAN-LIAU INDEX")
+                    st.markdown(f"<span style='font-size:2rem;font-weight:700;color:#818cf8;'>{metrics['coleman_liau_index']}</span>", unsafe_allow_html=True)
+                    st.caption("Grade level (character-based)")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Complexity Breakdown
+            with st.container(border=True):
+                st.caption("COMPLEXITY BREAKDOWN")
+                total_w = metrics['word_count']
+                complex_w = metrics['complex_word_count']
+                simple_w = total_w - complex_w
+                complex_pct = round((complex_w / total_w) * 100, 1) if total_w > 0 else 0
+
+                bc1, bc2, bc3 = st.columns(3)
+                with bc1:
+                    st.metric("Total Syllables", f"{metrics['syllable_count']:,}")
+                with bc2:
+                    st.metric("Complex Words (3+ syllables)", f"{complex_w:,}")
+                with bc3:
+                    st.metric("Complexity Ratio", f"{complex_pct}%")
+
+                # Visual bar
+                st.markdown(f"""
+                    <div style="margin-top:12px;">
+                        <div style="display:flex;height:24px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,0.05);">
+                            <div style="width:{100-complex_pct}%;background:#818cf8;" title="Simple words"></div>
+                            <div style="width:{complex_pct}%;background:#f87171;" title="Complex words"></div>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.8rem;color:#94a3b8;">
+                            <span>Simple words ({simple_w:,})</span>
+                            <span>Complex words ({complex_w:,})</span>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.warning("No text available for readability analysis.")
+
+    # 7. Gallery
+    with t7:
         st.markdown(f"""
             <div class="section-header">
                 <div class="header-icon-box"><span class="material-symbols-rounded">image</span></div>
@@ -408,8 +502,8 @@ if st.session_state.processed:
         else:
             st.info("No images extracted.")
 
-    # 7. Export
-    with t7:
+    # 8. Export
+    with t8:
         st.markdown("""
             <div class="section-header">
                 <div class="header-icon-box"><span class="material-symbols-rounded">download</span></div>
@@ -453,6 +547,109 @@ if st.session_state.processed:
                 else:
                     st.button("No Tables", disabled=True, use_container_width=True)
 
+    # 9. Redact
+    with t9:
+        st.markdown("""
+            <div class="section-header">
+                <div class="header-icon-box"><span class="material-symbols-rounded">shield</span></div>
+                <div class="header-text">PDF Redaction Tool</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        st.caption("Black out sensitive information and download a redacted copy of your PDF.")
+
+        col_kw, col_pat = st.columns(2)
+        with col_kw:
+            with st.container(border=True):
+                st.markdown("**Custom Keywords**")
+                st.caption("Enter words or phrases to redact (one per line)")
+                kw_input = st.text_area(
+                    "Keywords", height=140, label_visibility="collapsed",
+                    placeholder="John Doe\nConfidential\nProject X",
+                    key="redact_keywords"
+                )
+        with col_pat:
+            with st.container(border=True):
+                st.markdown("**Auto-Detect Patterns**")
+                st.caption("Select built-in patterns to redact")
+                available = get_available_patterns()
+                selected_patterns = []
+                for pat_name in available:
+                    if st.checkbox(pat_name, key=f"pat_{pat_name}"):
+                        selected_patterns.append(pat_name)
+
+        with st.expander("Advanced: Custom Regex Pattern"):
+            custom_re = st.text_input(
+                "Enter a Python regex pattern",
+                placeholder=r"e.g. SSN\-\d{3}\-\d{2}\-\d{4}",
+                key="redact_custom_regex"
+            )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if st.button("Redact PDF", type="primary", use_container_width=True, key="run_redact_btn"):
+            keywords_list = [k.strip() for k in kw_input.strip().split("\n") if k.strip()] if kw_input else []
+
+            if not keywords_list and not selected_patterns and not custom_re:
+                st.warning("Please enter at least one keyword, select a pattern, or provide a custom regex.")
+            elif "data" not in st.session_state or "file_path" not in st.session_state.data:
+                st.error("Please initialize analysis first so the PDF is loaded.")
+            else:
+                pdf_path = st.session_state.data["file_path"]
+                output_dir = st.session_state.data.get("output_dir", "downloads")
+                redacted_path = os.path.join(output_dir, f"REDACTED_{data['filename']}")
+
+                with st.spinner("Applying redactions..."):
+                    try:
+                        result = redact_pdf(
+                            input_path=pdf_path,
+                            output_path=redacted_path,
+                            keywords=keywords_list,
+                            pattern_keys=selected_patterns,
+                            custom_regex=custom_re if custom_re else None,
+                        )
+                        st.session_state["redact_result"] = result
+                    except Exception as e:
+                        st.exception(e)
+
+        # Display results
+        redact_out = st.session_state.get("redact_result")
+        if redact_out:
+            total = redact_out["total_redactions"]
+            if total == 0:
+                st.info("No matches found for the given keywords/patterns. The PDF was not modified.")
+            else:
+                st.success(f"✅ **{total} redaction(s)** applied successfully!")
+
+                rc1, rc2 = st.columns([1, 2])
+                with rc1:
+                    with st.container(border=True):
+                        st.caption("TOTAL REDACTIONS")
+                        st.markdown(f"<span style='font-size:2rem;font-weight:700;color:#4ade80;'>{total}</span>", unsafe_allow_html=True)
+                        if redact_out.get("patterns_used"):
+                            st.caption("Patterns: " + ", ".join(redact_out["patterns_used"]))
+                with rc2:
+                    with st.container(border=True):
+                        st.caption("REDACTIONS PER PAGE")
+                        page_data = [p for p in redact_out["per_page"] if p["count"] > 0]
+                        if page_data:
+                            chart_df = pd.DataFrame(page_data)
+                            st.bar_chart(chart_df.set_index("page")["count"], use_container_width=True)
+                        else:
+                            st.write("—")
+
+                # Download button
+                rpath = redact_out.get("output_path")
+                if rpath and os.path.exists(rpath):
+                    with open(rpath, "rb") as rf:
+                        st.download_button(
+                            "⬇️ Download Redacted PDF",
+                            rf,
+                            file_name=f"REDACTED_{data['filename']}",
+                            mime="application/pdf",
+                            use_container_width=True,
+                        )
+
     # --- FOOTER ---
     st.markdown("""
         <div class="footer" style="text-align:center; padding:40px 0; color:#64748b; font-size:0.8rem; border-top:1px solid rgba(255,255,255,0.05);">
@@ -460,8 +657,8 @@ if st.session_state.processed:
         </div>
     """, unsafe_allow_html=True)
 
-    # 8. Persona AI (Challenge 1B-style)
-    with t8:
+    # 10. Persona AI (Challenge 1B-style)
+    with t10:
         st.markdown(
             '''
             <div class="section-header">
