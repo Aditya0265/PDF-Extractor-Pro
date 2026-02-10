@@ -217,6 +217,8 @@ Open browser:
 -   OCR accuracy depends on scan quality
 -   Structure detection is heuristic-based
 -   Very large PDFs may increase processing time
+-   Currently optimized for **English-language PDFs only**
+-   Non-English documents may produce inaccurate structure detection or semantic ranking
 
 ------------------------------------------------------------------------
 
