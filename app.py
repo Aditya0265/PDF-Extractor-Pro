@@ -24,6 +24,7 @@ from src.extractor import process_pdf, translate_content
 from src.persona_intel import run_persona_intelligence
 from src.readability import compute_readability
 from src.redactor import redact_pdf, get_available_patterns
+from src.page_clustering import cluster_pages
 
 # --- 2. PAGE CONFIGURATION ---
 st.set_page_config(
@@ -461,6 +462,8 @@ if st.session_state.processed:
 
         st.caption("Black out sensitive information and download a redacted copy of your PDF.")
 
+        st.markdown("<br>", unsafe_allow_html=True)
+
         col_kw, col_pat = st.columns(2)
         with col_kw:
             with st.container(border=True):
@@ -656,6 +659,83 @@ if st.session_state.processed:
                 ax.imshow(wc, interpolation='bilinear'); ax.axis("off"); fig.patch.set_alpha(0)
                 st.pyplot(fig); plt.close(fig)
             except: st.error("Word Cloud generation failed.")
+
+        # --- Page Clustering (PCA + KMeans) ---
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("""
+            <div class="section-header">
+                <div class="header-icon-box"><span class="material-symbols-rounded">hub</span></div>
+                <div class="header-text">Page Topic Clustering</div>
+            </div>
+        """, unsafe_allow_html=True)
+        st.caption("Pages clustered by topical similarity using TF-IDF + KMeans, projected to 2D with PCA.")
+
+        cl_c1, cl_c2 = st.columns(2)
+        with cl_c1:
+            n_clusters_input = st.slider("Number of topic clusters", min_value=2, max_value=8, value=4, step=1, key="cluster_k")
+        with cl_c2:
+            min_chars_cluster = st.slider("Min characters per page", min_value=20, max_value=200, value=60, step=10, key="cluster_min")
+
+        if st.button("Run Page Clustering", type="primary", use_container_width=True, key="run_cluster_btn"):
+            if "data" not in st.session_state or "file_path" not in st.session_state.data:
+                st.error("Please initialize analysis first.")
+            else:
+                with st.spinner("Clustering pages..."):
+                    try:
+                        cluster_result = cluster_pages(
+                            pdf_path=st.session_state.data["file_path"],
+                            n_clusters=n_clusters_input,
+                            min_chars=min_chars_cluster,
+                        )
+                        st.session_state["cluster_result"] = cluster_result
+                    except Exception as e:
+                        st.exception(e)
+
+        cluster_out = st.session_state.get("cluster_result")
+        if cluster_out:
+            if cluster_out.get("warning"):
+                st.warning(cluster_out["warning"])
+            elif cluster_out["pages"]:
+                # Scatter plot
+                cluster_df = pd.DataFrame(cluster_out["pages"])
+                cluster_colors = ["#818cf8", "#f87171", "#4ade80", "#facc15", "#c084fc", "#fb923c", "#38bdf8", "#e879f9"]
+
+                fig2, ax2 = plt.subplots(figsize=(10, 6))
+                fig2.patch.set_facecolor('#0E1117')
+                ax2.set_facecolor('#0E1117')
+
+                for c_id in sorted(cluster_df["cluster"].unique()):
+                    subset = cluster_df[cluster_df["cluster"] == c_id]
+                    color = cluster_colors[c_id % len(cluster_colors)]
+                    label_text = cluster_out["cluster_labels"].get(c_id, f"Cluster {c_id}")
+                    ax2.scatter(subset["x"], subset["y"], c=color, s=120, alpha=0.85, edgecolors="white", linewidths=0.5, label=f"C{c_id}: {label_text}", zorder=2)
+                    for _, row in subset.iterrows():
+                        ax2.annotate(f"Pg {row['page_number']}", (row["x"], row["y"]), textcoords="offset points", xytext=(6, 6), fontsize=8, color="#e2e8f0")
+
+                ax2.set_xlabel("PCA Component 1", color="#94a3b8", fontsize=10)
+                ax2.set_ylabel("PCA Component 2", color="#94a3b8", fontsize=10)
+                ax2.tick_params(colors="#64748b")
+                ax2.legend(fontsize=8, facecolor="#1e1e2e", edgecolor="#333", labelcolor="#e2e8f0", loc="best")
+                ax2.grid(True, alpha=0.1)
+                for spine in ax2.spines.values():
+                    spine.set_color("#333")
+                st.pyplot(fig2)
+                plt.close(fig2)
+
+                # Cluster summary
+                st.markdown("<br>", unsafe_allow_html=True)
+                with st.container(border=True):
+                    st.caption("CLUSTER SUMMARY")
+                    sum_c1, sum_c2 = st.columns(2)
+                    with sum_c1:
+                        st.metric("Pages Analyzed", f"{cluster_out['included_pages']} / {cluster_out['total_pages']}")
+                    with sum_c2:
+                        st.metric("Topic Clusters", cluster_out["n_clusters"])
+
+                    for c_id, c_label in cluster_out["cluster_labels"].items():
+                        pages_in = [p["page_number"] for p in cluster_out["pages"] if p["cluster"] == c_id]
+                        color = cluster_colors[c_id % len(cluster_colors)]
+                        st.markdown(f"<span style='color:{color};font-weight:600;'>Cluster {c_id}:</span> {c_label} — Pages: {', '.join(map(str, pages_in))}", unsafe_allow_html=True)
 
     # 9. Gallery
     with tab_gallery:
