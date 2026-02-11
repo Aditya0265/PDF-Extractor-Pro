@@ -8,6 +8,5 @@ deep-translator
 wordcloud
 matplotlib
 Pillow
-spacy
 scikit-learn
 pytesseract
